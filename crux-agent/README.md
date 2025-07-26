@@ -169,6 +169,8 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 cd crux-mvp
 
 # Install dependencies
+# Install pnpm if not already installed
+npm install -g pnpm
 pnpm install
 # Or use npm: npm install
 
