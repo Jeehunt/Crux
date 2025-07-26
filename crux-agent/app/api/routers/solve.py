@@ -1,6 +1,7 @@
 """
 Solve endpoints for basic and enhanced modes.
 """
+
 import json
 import time
 import uuid
@@ -16,6 +17,8 @@ from app.api.dependencies import (
     get_provider,
     get_redis,
     get_request_id,
+    rate_limiter_standard,
+    verify_api_key,
 )
 from app.core.orchestrators.basic import BasicRunner
 from app.core.orchestrators.enhanced import EnhancedRunner
@@ -30,6 +33,7 @@ logger = get_logger(__name__)
 router = APIRouter(
     prefix="/solve",
     tags=["solve"],
+    dependencies=[Depends(verify_api_key), Depends(rate_limiter_standard)],
 )
 
 
@@ -43,20 +47,20 @@ async def solve_basic(
 ) -> SolutionResponse | AsyncJobResponse:
     """
     Solve a problem using basic mode.
-    
+
     Basic mode uses a single Self-Evolve loop with:
     - Generator: General-purpose LLM
     - Evaluator: Quality assessment agent
     - Refiner: Prompt improvement agent
-    
+
     If `async_mode` is true, returns a job ID for checking status later.
     """
     logger.info(f"Basic solve request: {request.question[:100]}... [request_id={request_id}]")
-    
+
     if request.async_mode:
         # Submit to Celery
         job_id = str(uuid.uuid4())
-        
+
         # Store initial job info in Redis
         job_data = {
             "job_id": job_id,
@@ -67,31 +71,31 @@ async def solve_basic(
         }
         await redis_client.hset(f"job:{job_id}", mapping=job_data)
         await redis_client.expire(f"job:{job_id}", 3600)  # 1 hour TTL
-        
+
         # Submit task to Celery
         celery_app.send_task(
             "app.worker.solve_basic_task",
             args=[job_id, request.model_dump()],
             task_id=job_id,
         )
-        
+
         return AsyncJobResponse(
             job_id=job_id,
             status=JobStatus.PENDING,
             created_at=datetime.now(datetime.UTC),
             message="Job submitted successfully",
         )
-    
+
     # Synchronous execution
     try:
         start_time = time.time()
-        
+
         # Create runner
         runner = BasicRunner(
             provider=provider,
             max_iters=request.n_iters or settings.max_iters,
         )
-        
+
         # Solve
         solution = await runner.solve(
             question=request.question,
@@ -99,9 +103,9 @@ async def solve_basic(
             constraints=request.constraints,
             metadata={"request_id": request_id},
         )
-        
+
         processing_time = time.time() - start_time
-        
+
         return SolutionResponse(
             output=solution.output,
             iterations=solution.iterations,
@@ -111,7 +115,7 @@ async def solve_basic(
             stop_reason=solution.metadata.get("stop_reason", "unknown"),
             metadata=solution.metadata,
         )
-        
+
     except Exception as e:
         logger.error(f"Basic solve failed: {e} [request_id={request_id}]")
         raise HTTPException(
@@ -130,21 +134,21 @@ async def solve_enhanced(
 ) -> SolutionResponse | AsyncJobResponse:
     """
     Solve a problem using enhanced mode.
-    
+
     Enhanced mode uses:
     1. Professor agent to analyze the problem
     2. Professor autonomously calls specialist agents via function calling
     3. Each specialist runs their own Self-Evolve
     4. Professor synthesizes all results using Self-Evolve
-    
+
     If `async_mode` is true, returns a job ID for checking status later.
     """
     logger.info(f"Enhanced solve request: {request.question[:100]}... [request_id={request_id}]")
-    
+
     if request.async_mode:
         # Submit to Celery
         job_id = str(uuid.uuid4())
-        
+
         # Store initial job info in Redis
         job_data = {
             "job_id": job_id,
@@ -155,40 +159,40 @@ async def solve_enhanced(
         }
         await redis_client.hset(f"job:{job_id}", mapping=job_data)
         await redis_client.expire(f"job:{job_id}", 3600)  # 1 hour TTL
-        
+
         # Submit task to Celery
         celery_app.send_task(
             "app.worker.solve_enhanced_task",
             args=[job_id, request.model_dump()],
             task_id=job_id,
         )
-        
+
         return AsyncJobResponse(
             job_id=job_id,
             status=JobStatus.PENDING,
             created_at=datetime.now(datetime.UTC),
             message="Job submitted successfully",
         )
-    
+
     # Synchronous execution
     try:
         start_time = time.time()
-        
+
         # Create runner
         runner = EnhancedRunner(
             provider=provider,
             max_iters_per_specialist=request.specialist_max_iters or settings.specialist_max_iters,
             professor_max_iters=request.professor_max_iters or settings.professor_max_iters,
         )
-        
+
         # Solve
         solution = await runner.solve(
             question=request.question,
             metadata={"request_id": request_id},
         )
-        
+
         processing_time = time.time() - start_time
-        
+
         return SolutionResponse(
             output=solution.output,
             iterations=solution.iterations,
@@ -198,7 +202,7 @@ async def solve_enhanced(
             stop_reason=solution.metadata.get("stop_reason", "unknown"),
             metadata=solution.metadata,
         )
-        
+
     except Exception as e:
         logger.error(f"Enhanced solve failed: {e} [request_id={request_id}]")
         raise HTTPException(
