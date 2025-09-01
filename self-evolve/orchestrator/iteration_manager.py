@@ -268,16 +268,10 @@ class IterationManager:
             }, ensure_ascii=False))
         
         # Persist results under examples/results/{exec_id}/iteration{n}/qa.md
-        print("DEBUG: About to call _save_example_results")
         try:
-            print("DEBUG: Entering _save_example_results try block")
             self._save_example_results(session)
-            print("DEBUG: _save_example_results completed successfully")
         except Exception as e:
-            print(f"DEBUG: Exception in _save_example_results: {e}")
             self.logger.warning(f"Failed to save example results: {e}")
-        
-        print("DEBUG: Returning session")
         return session
     
     def _extract_answer_value(self, answer: str) -> Optional[str]:
@@ -298,75 +292,63 @@ class IterationManager:
                 iteration2/qa.md
                 ...
         """
-        print("DEBUG: _save_example_results function entered")
-        print(f"DEBUG: Session has {len(session.iterations)} iterations")
-        
         # Use the same path as tooliense.examples.logs
         results_root = "./tooliense/logs"
-        print(f"DEBUG: results_root = {results_root}")
-        
-        print("DEBUG: Creating directories")
         os.makedirs(results_root, exist_ok=True)
-        print(f"DEBUG: Directory created successfully: {results_root}")
-        print(results_root)
 
         # Execution identifier (timestamp-based)
         exec_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        print(f"DEBUG: exec_id = {exec_id}")
-        
         exec_dir = os.path.join(results_root, exec_id)
-        print(f"DEBUG: exec_dir = {exec_dir}")
-        
         os.makedirs(exec_dir, exist_ok=True)
-        print(f"DEBUG: Created exec_dir successfully")
 
         # Save each iteration
-        print(f"DEBUG: Starting to save {len(session.iterations)} iterations")
         for it in session.iterations:
-            print(f"DEBUG: Processing iteration {it.iteration}")
             iter_dir = os.path.join(exec_dir, f"iteration{it.iteration}")
-            print(f"DEBUG: iter_dir = {iter_dir}")
-            
             os.makedirs(iter_dir, exist_ok=True)
-            print(f"DEBUG: Created iter_dir successfully")
             
-            md_content = f"# Iteration {it.iteration}\n\n"
-            md_content += "## Question (Refined)\n\n"
-            md_content += f"```\n{it.refined_question}\n```\n\n"
-            md_content += "## Answer\n\n"
-            md_content += f"```\n{it.answer}\n```\n\n"
+            md_content_parts = [
+                f"# Iteration {it.iteration}\n\n",
+                "## Question (Refined)\n\n",
+                f"```\n{it.refined_question}\n```\n\n",
+                "## Answer\n\n",
+                f"```\n{it.answer}\n```\n\n"
+            ]
+            
             if it.reasoning_summary:
-                md_content += "## Generator Reasoning Summary\n\n"
-                md_content += f"```\n{it.reasoning_summary}\n```\n\n"
-            md_content += "## Evaluation\n\n"
-            md_content += f"```\n{it.evaluation_feedback}\n```\n\n"
+                md_content_parts.extend([
+                    "## Generator Reasoning Summary\n\n",
+                    f"```\n{it.reasoning_summary}\n```\n\n"
+                ])
+            
+            md_content_parts.extend([
+                "## Evaluation\n\n",
+                f"```\n{it.evaluation_feedback}\n```\n\n"
+            ])
+            
             if it.evaluator_reasoning_summary:
-                md_content += "## Evaluator Reasoning Summary\n\n"
-                md_content += f"```\n{it.evaluator_reasoning_summary}\n```\n\n"
+                md_content_parts.extend([
+                    "## Evaluator Reasoning Summary\n\n",
+                    f"```\n{it.evaluator_reasoning_summary}\n```\n\n"
+                ])
+            
             if it.refiner_reasoning_summary:
-                md_content += "## Prompt Refiner Reasoning Summary\n\n"
-                md_content += f"```\n{it.refiner_reasoning_summary}\n```\n\n"
+                md_content_parts.extend([
+                    "## Prompt Refiner Reasoning Summary\n\n",
+                    f"```\n{it.refiner_reasoning_summary}\n```\n\n"
+                ])
+
+            md_content = "".join(md_content_parts)
 
             # Save to file
             md_path = os.path.join(iter_dir, "qa.md")
-            print(f"DEBUG: md_path = {md_path}")
-
-            print(f"DEBUG: Writing to file: {md_path}")
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(md_content)
-            print(f"DEBUG: Successfully wrote iteration {it.iteration} file")
 
         # Save final answer summary
-        print("DEBUG: Saving final answer summary")
         final_md_path = os.path.join(exec_dir, "final_answer.md")
-        print(f"DEBUG: final_md_path = {final_md_path}")
-        
         with open(final_md_path, "w", encoding="utf-8") as f:
             f.write("# Final Answer\n\n")
             f.write("```)\n")
             f.write(session.final_answer.strip())
             f.write("\n```)\n\n")
-            f.write(f"_Total iterations_: {session.total_iterations}\n")
-        
-        print("DEBUG: Successfully wrote final_answer.md")
-        print("DEBUG: _save_example_results function completed successfully") 
+            f.write(f"_Total iterations_: {session.total_iterations}\n")   
